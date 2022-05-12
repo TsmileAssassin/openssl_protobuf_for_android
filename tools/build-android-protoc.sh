@@ -20,10 +20,6 @@ set -u
 
 source ./build-android-common.sh
 
-if [ -z ${version+x} ]; then 
-  version="1.1.1l"
-fi
-
 init_log_color
 
 TOOLS_ROOT=$(pwd)
@@ -39,18 +35,15 @@ pwd_path="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 echo pwd_path=${pwd_path}
 echo TOOLS_ROOT=${TOOLS_ROOT}
 
-# openssl-1.1.0f has a configure bug
-# openssl-1.1.1d has fix configure bug
-LIB_VERSION="OpenSSL_$(echo $version | sed 's/\./_/g')"
-LIB_NAME="openssl-$version"
-LIB_DEST_DIR="${pwd_path}/../output/android/openssl-universal"
+LIB_VERSION="v3.19.2"
+LIB_NAME="protobuf-3.19.2"
+LIB_DEST_DIR="${pwd_path}/../output/android/protobuf"
 
-echo "https://www.openssl.org/source/${LIB_NAME}.tar.gz"
+#brew install autoconf automake libtool
+#echo "https://github.com/protocolbuffers/protobuf/archive/refs/tags/v3.19.2.tar.gz"
 
-# https://github.com/openssl/openssl/archive/OpenSSL_1_1_1d.tar.gz
-# https://github.com/openssl/openssl/archive/OpenSSL_1_1_1f.tar.gz
 rm -rf "${LIB_DEST_DIR}" "${LIB_NAME}"
-[ -f "${LIB_NAME}.tar.gz" ] || curl https://www.openssl.org/source/${LIB_NAME}.tar.gz >${LIB_NAME}.tar.gz
+[ -f "${LIB_NAME}.tar.gz" ] || curl -L https://github.com/protocolbuffers/protobuf/archive/refs/tags/${LIB_VERSION}.tar.gz >${LIB_NAME}.tar.gz
 
 set_android_toolchain_bin
 
@@ -69,38 +62,41 @@ function configure_make() {
     pushd .
     cd "${LIB_NAME}"
 
-    PREFIX_DIR="${pwd_path}/../output/android/openssl-${ABI}"
+    ./autogen.sh
+
+    PREFIX_DIR="${pwd_path}/../output/android/protobuf-${ABI}"
     if [ -d "${PREFIX_DIR}" ]; then
         rm -fr "${PREFIX_DIR}"
     fi
     mkdir -p "${PREFIX_DIR}"
 
-    OUTPUT_ROOT=${TOOLS_ROOT}/../output/android/openssl-${ABI}
+    OUTPUT_ROOT=${TOOLS_ROOT}/../output/android/protobuf-${ABI}
     mkdir -p ${OUTPUT_ROOT}/log
 
-    set_android_toolchain "openssl" "${ARCH}" "${ANDROID_API}"
-    set_android_cpu_feature "openssl" "${ARCH}" "${ANDROID_API}"
+    set_android_toolchain "protobuf" "${ARCH}" "${ANDROID_API}"
 
     export ANDROID_NDK_HOME=${ANDROID_NDK_ROOT}
     echo ANDROID_NDK_HOME=${ANDROID_NDK_HOME}
 
+    export CFLAGS=""
+    export CXXFLAGS=""
+    export LDFLAGS=""
+    export CPPFLAGS=""
     android_printf_global_params "$ARCH" "$ABI" "$ABI_TRIPLE" "$PREFIX_DIR" "$OUTPUT_ROOT"
 
+    cd cmake
+    export PREFIX=$PREFIX_DIR
     if [[ "${ARCH}" == "x86_64" ]]; then
-
-        ./Configure android-x86_64 --prefix="${PREFIX_DIR}"
+        cmake -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake -DANDROID_ABI=${ABI} -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} -DCMAKE_BUILD_TYPE=Release -DANDROID_TOOLCHAIN=clang -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=$PREFIX_DIR >"${OUTPUT_ROOT}/log/${ABI}.log" 2>&1
 
     elif [[ "${ARCH}" == "x86" ]]; then
-
-        ./Configure android-x86 --prefix="${PREFIX_DIR}"
-
+        cmake -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake -DANDROID_ABI=${ABI} -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} -DCMAKE_BUILD_TYPE=Release -DANDROID_TOOLCHAIN=clang -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=$PREFIX_DIR >"${OUTPUT_ROOT}/log/${ABI}.log" 2>&1
     elif [[ "${ARCH}" == "arm" ]]; then
 
-        ./Configure android-arm --prefix="${PREFIX_DIR}"
+        cmake -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake -DANDROID_ABI=${ABI} -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} -DCMAKE_BUILD_TYPE=Release -DANDROID_TOOLCHAIN=clang -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=$PREFIX_DIR >"${OUTPUT_ROOT}/log/${ABI}.log" 2>&1
 
     elif [[ "${ARCH}" == "arm64" ]]; then
-
-        ./Configure android-arm64 --prefix="${PREFIX_DIR}"
+        cmake -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake -DANDROID_ABI=${ABI} -DANDROID_NATIVE_API_LEVEL=${ANDROID_API} -DCMAKE_BUILD_TYPE=Release -DANDROID_TOOLCHAIN=clang -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX=$PREFIX_DIR >"${OUTPUT_ROOT}/log/${ABI}.log" 2>&1
 
     else
         log_error "not support" && exit 1
@@ -108,17 +104,15 @@ function configure_make() {
 
     log_info "make $ABI start..."
 
-    make clean >"${OUTPUT_ROOT}/log/${ABI}.log"
+    export PREFIX=$PREFIX_DIR
     if make -j$(get_cpu_count) >>"${OUTPUT_ROOT}/log/${ABI}.log" 2>&1; then
-        make install_sw >>"${OUTPUT_ROOT}/log/${ABI}.log" 2>&1
-        make install_ssldirs >>"${OUTPUT_ROOT}/log/${ABI}.log" 2>&1
+        make install >>"${OUTPUT_ROOT}/log/${ABI}.log" 2>&1
     fi
 
     popd
 }
 
 log_info "${PLATFORM_TYPE} ${LIB_NAME} start..."
-
 for ((i = 0; i < ${#ARCHS[@]}; i++)); do
     if [[ $# -eq 0 || "$1" == "${ARCHS[i]}" ]]; then
         configure_make "${ARCHS[i]}" "${ABIS[i]}" "${ARCHS[i]}-linux-android"
